@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="1.0.0"
+WORKTREE_DIR=".worktrees"
+
+# ── Helpers ──────────────────────────────────────────────────────────
+
+die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
+success() { printf '\033[1;32m✔\033[0m %s\n' "$*"; }
+
+ensure_git_repo() {
+  git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
+}
+
+repo_root() {
+  git rev-parse --show-toplevel
+}
+
+default_branch() {
+  local ref
+  ref="$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null)" && {
+    printf '%s\n' "${ref##*/}"
+    return
+  }
+  for candidate in main master; do
+    git show-ref --verify --quiet "refs/heads/$candidate" 2>/dev/null && {
+      printf '%s\n' "$candidate"
+      return
+    }
+  done
+  git rev-parse --abbrev-ref HEAD
+}
+
+ensure_worktree_dir() {
+  local root
+  root="$(repo_root)"
+  local dir="$root/$WORKTREE_DIR"
+
+  if [ ! -d "$dir" ]; then
+    mkdir -p "$dir"
+    info "created $WORKTREE_DIR/"
+  fi
+
+  local gitignore="$root/.gitignore"
+  if [ ! -f "$gitignore" ] || ! grep -qxF "$WORKTREE_DIR/" "$gitignore" 2>/dev/null; then
+    printf '%s/\n' "$WORKTREE_DIR" >> "$gitignore"
+    info "added $WORKTREE_DIR/ to .gitignore"
+  fi
+}
+
+# ── Commands ─────────────────────────────────────────────────────────
+
+cmd_add() {
+  local branch="${1:-}"
+  local base="${2:-}"
+
+  [ -z "$branch" ] && die "usage: git wt add <branch> [base]"
+
+  ensure_git_repo
+
+  if [ -z "$base" ]; then
+    base="$(default_branch)"
+  fi
+
+  ensure_worktree_dir
+
+  local root
+  root="$(repo_root)"
+  local target="$root/$WORKTREE_DIR/$branch"
+
+  [ -d "$target" ] && die "worktree '$branch' already exists at $WORKTREE_DIR/$branch"
+
+  info "fetching from origin…"
+  git fetch origin 2>/dev/null || info "fetch skipped (no remote 'origin')"
+
+  info "creating worktree for '$branch' based on '$base'…"
+  git worktree add -b "$branch" "$target" "$base" 2>/dev/null \
+    || git worktree add "$target" "$branch" 2>/dev/null \
+    || die "failed to create worktree — does branch or base exist?"
+
+  success "worktree created at $WORKTREE_DIR/$branch"
+}
+
+cmd_list() {
+  ensure_git_repo
+  git worktree list
+}
+
+cmd_remove() {
+  local branch="${1:-}"
+  [ -z "$branch" ] && die "usage: git wt remove <branch>"
+
+  ensure_git_repo
+
+  local root
+  root="$(repo_root)"
+  local target="$root/$WORKTREE_DIR/$branch"
+
+  [ ! -d "$target" ] && die "worktree '$branch' not found at $WORKTREE_DIR/$branch"
+
+  info "removing worktree '$branch'…"
+  git worktree remove "$target" --force
+  success "worktree '$branch' removed"
+}
+
+cmd_prune() {
+  ensure_git_repo
+  info "pruning stale worktrees…"
+  git worktree prune --verbose
+  success "done"
+}
+
+cmd_path() {
+  local branch="${1:-}"
+  [ -z "$branch" ] && die "usage: git wt path <branch>"
+
+  ensure_git_repo
+
+  local root
+  root="$(repo_root)"
+  local target="$root/$WORKTREE_DIR/$branch"
+
+  [ ! -d "$target" ] && die "worktree '$branch' not found"
+
+  printf '%s\n' "$target"
+}
+
+cmd_version() {
+  printf 'git-wt %s\n' "$VERSION"
+}
+
+cmd_help() {
+  cat <<EOF
+git-wt $VERSION — simple git worktree manager
+
+USAGE
+  git wt <command> [args]
+
+COMMANDS
+  add <branch> [base]   Create a worktree in $WORKTREE_DIR/<branch>
+                         Base defaults to default branch (main/master)
+  list                   List all worktrees
+  remove <branch>        Remove a worktree
+  prune                  Remove stale worktree references
+  path <branch>          Print the absolute path of a worktree
+  help                   Show this help message
+  version                Show version
+
+EXAMPLES
+  git wt add feature-login
+  git wt add feature-login develop
+  git wt list
+  git wt remove feature-login
+  git wt prune
+  git wt path feature-login
+EOF
+}
+
+# ── Dispatch ─────────────────────────────────────────────────────────
+
+main() {
+  local cmd="${1:-help}"
+  shift || true
+
+  case "$cmd" in
+    add)     cmd_add "$@" ;;
+    list|ls) cmd_list "$@" ;;
+    remove|rm) cmd_remove "$@" ;;
+    prune)   cmd_prune "$@" ;;
+    path)    cmd_path "$@" ;;
+    version|--version|-v) cmd_version ;;
+    help|--help|-h) cmd_help ;;
+    *) die "unknown command '$cmd' — run 'git wt help'" ;;
+  esac
+}
+
+main "$@"
