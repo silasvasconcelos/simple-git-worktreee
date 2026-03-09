@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "description": "Simple git worktree manager",
+  "homepage": "https://github.com/silasvasconcelos/simple-git-worktreee",
+  "license": "MIT",
+  "url": "https://github.com/silasvasconcelos/simple-git-worktreee/releases/download/v1.0.0/simple-git-worktree-v1.0.0.zip",
+  "hash": "PLACEHOLDER",
+  "bin": "bin/git-wt",
+  "post_install": "git config --global alias.wt '!git-wt'"
+}
