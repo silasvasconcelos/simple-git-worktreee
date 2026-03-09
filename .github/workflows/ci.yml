@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: ShellCheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Lint git-wt
+        run: shellcheck bin/git-wt
+
+      - name: Lint install.sh
+        run: shellcheck install.sh
+
+  test:
+    name: Smoke test
+    needs: lint
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify help output
+        run: |
+          chmod +x bin/git-wt
+          bin/git-wt help
+
+      - name: Verify version output
+        run: bin/git-wt version | grep -q "git-wt"
+
+      - name: Test add/list/remove in a repo
+        run: |
+          cd "$(mktemp -d)"
+          git init -b main
+          git commit --allow-empty -m "init"
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          git-wt add test-branch
+          git-wt list | grep -q "test-branch"
+          git-wt path test-branch
+          git-wt remove test-branch
+          git-wt prune
