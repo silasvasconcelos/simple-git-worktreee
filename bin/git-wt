@@ -50,13 +50,97 @@ ensure_worktree_dir() {
   fi
 }
 
+# ── Per-command help ──────────────────────────────────────────────────
+
+wants_help() {
+  for arg in "$@"; do
+    case "$arg" in --help|-h) return 0 ;; esac
+  done
+  return 1
+}
+
+usage_add() {
+  cat <<EOF
+Usage: git wt add <branch> [base]
+
+Create a new worktree in $WORKTREE_DIR/<branch>.
+
+Arguments:
+  branch   Name of the branch to create
+  base     Base branch (defaults to main/master)
+
+Examples:
+  git wt add feature-login
+  git wt add feature-login develop
+EOF
+}
+
+usage_remove() {
+  cat <<EOF
+Usage: git wt remove <branch>
+
+Remove an existing worktree.
+
+Arguments:
+  branch   Name of the worktree branch to remove
+
+Aliases: rm
+
+Examples:
+  git wt remove feature-login
+  git wt rm feature-login
+EOF
+}
+
+usage_list() {
+  cat <<EOF
+Usage: git wt list
+
+List all worktrees in the repository.
+
+Aliases: ls
+
+Examples:
+  git wt list
+  git wt ls
+EOF
+}
+
+usage_prune() {
+  cat <<EOF
+Usage: git wt prune
+
+Remove stale worktree references that are no longer valid.
+
+Examples:
+  git wt prune
+EOF
+}
+
+usage_path() {
+  cat <<EOF
+Usage: git wt path <branch>
+
+Print the absolute path of a worktree.
+
+Arguments:
+  branch   Name of the worktree branch
+
+Examples:
+  git wt path feature-login
+  code "\$(git wt path feature-login)"
+EOF
+}
+
 # ── Commands ─────────────────────────────────────────────────────────
 
 cmd_add() {
+  wants_help "$@" && { usage_add; return 0; }
+
   local branch="${1:-}"
   local base="${2:-}"
 
-  [ -z "$branch" ] && die "usage: git wt add <branch> [base]"
+  [ -z "$branch" ] && { usage_add; exit 1; }
 
   ensure_git_repo
 
@@ -84,13 +168,16 @@ cmd_add() {
 }
 
 cmd_list() {
+  wants_help "$@" && { usage_list; return 0; }
   ensure_git_repo
   git worktree list
 }
 
 cmd_remove() {
+  wants_help "$@" && { usage_remove; return 0; }
+
   local branch="${1:-}"
-  [ -z "$branch" ] && die "usage: git wt remove <branch>"
+  [ -z "$branch" ] && { usage_remove; exit 1; }
 
   ensure_git_repo
 
@@ -106,6 +193,7 @@ cmd_remove() {
 }
 
 cmd_prune() {
+  wants_help "$@" && { usage_prune; return 0; }
   ensure_git_repo
   info "pruning stale worktrees…"
   git worktree prune --verbose
@@ -113,8 +201,10 @@ cmd_prune() {
 }
 
 cmd_path() {
+  wants_help "$@" && { usage_path; return 0; }
+
   local branch="${1:-}"
-  [ -z "$branch" ] && die "usage: git wt path <branch>"
+  [ -z "$branch" ] && { usage_path; exit 1; }
 
   ensure_git_repo
 
