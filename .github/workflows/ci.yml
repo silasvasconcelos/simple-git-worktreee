@@ -45,6 +45,8 @@ jobs:
         run: |
           cd "$(mktemp -d)"
           git init -b main
+          git config user.name "CI"
+          git config user.email "ci@test"
           git commit --allow-empty -m "init"
           export PATH="$GITHUB_WORKSPACE/bin:$PATH"
           git-wt add test-branch
