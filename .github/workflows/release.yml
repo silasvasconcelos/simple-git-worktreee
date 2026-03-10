@@ -90,6 +90,7 @@ jobs:
 
       - name: Update formula
         run: |
+          mkdir -p homebrew-tap/Formula
           cat > homebrew-tap/Formula/simple-git-worktree.rb <<'FORMULA'
           class SimpleGitWorktree < Formula
             desc "Simple git worktree manager"
