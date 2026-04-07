@@ -72,7 +72,10 @@ run_hook() {
   [ -z "$cmd" ] && return 0
 
   info "running hook '$hook_name'…"
-  ( export "$@" && cd "$root" && eval "$cmd" ) || {
+  (
+    cd "$root" || exit 1
+    env "$@" bash -c "eval \"\$1\"" _ "$cmd"
+  ) || {
     case "$hook_name" in
       pre-*)  die "hook '$hook_name' failed — aborting" ;;
       post-*) info "hook '$hook_name' failed (non-fatal)" ;;
