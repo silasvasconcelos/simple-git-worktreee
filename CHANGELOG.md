@@ -12,10 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `--go` flag for `git wt add` — prints the worktree path to stdout for `cd` integration (`cd "$(git wt add branch --go)"`).
 - `git wt root` command — prints the main repository root path, works from any worktree.
 - Hook system via `.git-wtrc` config file — supports `pre-add`, `post-add`, `pre-remove`, and `post-remove` hooks with environment variables (`GIT_WT_BRANCH`, `GIT_WT_PATH`, `GIT_WT_ROOT`, `GIT_WT_BASE`). Hooks can be any executable: shell, Python, Ruby, etc.
+- `--delete-branch` (`-db`) flag for `git wt remove` — automatically deletes the local branch without prompting (`git wt rm feature -db`).
 
 ### Changed
 
 - Status messages (`info`, `success`) now print to stderr, keeping stdout clean for machine-readable output.
+
+### Fixed
+
+- `git wt remove` no longer fails in non-interactive environments (CI/CD) when `/dev/tty` is unavailable — the branch delete prompt is now safely skipped with an informational message.
 
 ## [1.0.0] - 2026-03-09
 
