@@ -52,5 +52,5 @@ jobs:
           git-wt add test-branch
           git-wt list | grep -q "test-branch"
           git-wt path test-branch
-          git-wt remove test-branch
+          git-wt remove test-branch --delete-branch
           git-wt prune

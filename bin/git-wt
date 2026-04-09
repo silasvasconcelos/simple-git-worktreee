@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="1.1.0"
 WORKTREE_DIR=".worktrees"
+HOOKS_CONFIG=".git-wtrc"
 
 # ── Helpers ──────────────────────────────────────────────────────────
 
-die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
-info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-success() { printf '\033[1;32m✔\033[0m %s\n' "$*"; }
+die()     { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
+info()    { printf '\033[1;34m==>\033[0m %s\n' "$*" >&2; }
+success() { printf '\033[1;32m✔\033[0m %s\n' "$*" >&2; }
 
 ensure_git_repo() {
   git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository"
@@ -50,6 +51,38 @@ ensure_worktree_dir() {
   fi
 }
 
+project_root() {
+  local common_dir
+  common_dir="$(cd "$(git rev-parse --git-common-dir)" && pwd)"
+  printf '%s\n' "${common_dir%/.git}"
+}
+
+run_hook() {
+  local hook_name="$1"
+  shift
+  local root
+  root="$(repo_root)"
+  local config="$root/$HOOKS_CONFIG"
+
+  [ -f "$config" ] || return 0
+
+  local cmd
+  cmd="$(sed -n "s/^[[:space:]]*${hook_name}[[:space:]]*=[[:space:]]*//p" "$config" | head -1)"
+
+  [ -z "$cmd" ] && return 0
+
+  info "running hook '$hook_name'…"
+  (
+    cd "$root" || exit 1
+    env "$@" bash -c "eval \"\$1\"" _ "$cmd"
+  ) || {
+    case "$hook_name" in
+      pre-*)  die "hook '$hook_name' failed — aborting" ;;
+      post-*) info "hook '$hook_name' failed (non-fatal)" ;;
+    esac
+  }
+}
+
 # ── Per-command help ──────────────────────────────────────────────────
 
 wants_help() {
@@ -61,34 +94,43 @@ wants_help() {
 
 usage_add() {
   cat <<EOF
-Usage: git wt add <branch> [base]
+Usage: git wt add <branch> [base] [--go]
 
 Create a new worktree in $WORKTREE_DIR/<branch>.
 
 Arguments:
   branch   Name of the branch to create
-  base     Base branch (defaults to main/master)
+  base     Base branch (defaults to current branch)
+
+Options:
+  --go     Print the worktree path to stdout (for cd integration)
 
 Examples:
   git wt add feature-login
   git wt add feature-login develop
+  cd "\$(git wt add feature-login --go)"
 EOF
 }
 
 usage_remove() {
   cat <<EOF
-Usage: git wt remove <branch>
+Usage: git wt remove <branch> [--delete-branch]
 
 Remove an existing worktree.
 
 Arguments:
   branch   Name of the worktree branch to remove
 
+Options:
+  --delete-branch, -db   Also delete the local branch (skip prompt)
+
 Aliases: rm
 
 Examples:
   git wt remove feature-login
   git wt rm feature-login
+  git wt remove feature-login --delete-branch
+  git wt rm feature-login -db
 EOF
 }
 
@@ -132,20 +174,43 @@ Examples:
 EOF
 }
 
+usage_root() {
+  cat <<EOF
+Usage: git wt root
+
+Print the absolute path of the main repository root.
+
+Works from any worktree — always resolves to the original project directory.
+
+Examples:
+  git wt root
+  cd "\$(git wt root)"
+EOF
+}
+
 # ── Commands ─────────────────────────────────────────────────────────
 
 cmd_add() {
-  wants_help "$@" && { usage_add; return 0; }
+  local go_flag=false
+  local positional=()
 
-  local branch="${1:-}"
-  local base="${2:-}"
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h) usage_add; return 0 ;;
+      --go) go_flag=true ;;
+      *) positional+=("$arg") ;;
+    esac
+  done
+
+  local branch="${positional[0]:-}"
+  local base="${positional[1]:-}"
 
   [ -z "$branch" ] && { usage_add; exit 1; }
 
   ensure_git_repo
 
   if [ -z "$base" ]; then
-    base="$(default_branch)"
+    base="$(git rev-parse --abbrev-ref HEAD)"
   fi
 
   ensure_worktree_dir
@@ -156,6 +221,12 @@ cmd_add() {
 
   [ -d "$target" ] && die "worktree '$branch' already exists at $WORKTREE_DIR/$branch"
 
+  run_hook "pre-add" \
+    GIT_WT_BRANCH="$branch" \
+    GIT_WT_PATH="$target" \
+    GIT_WT_BASE="$base" \
+    GIT_WT_ROOT="$root"
+
   info "fetching from origin…"
   git fetch origin 2>/dev/null || info "fetch skipped (no remote 'origin')"
 
@@ -165,6 +236,16 @@ cmd_add() {
     || die "failed to create worktree — does branch or base exist?"
 
   success "worktree created at $WORKTREE_DIR/$branch"
+
+  run_hook "post-add" \
+    GIT_WT_BRANCH="$branch" \
+    GIT_WT_PATH="$target" \
+    GIT_WT_BASE="$base" \
+    GIT_WT_ROOT="$root"
+
+  if $go_flag; then
+    printf '%s\n' "$target"
+  fi
 }
 
 cmd_list() {
@@ -174,9 +255,18 @@ cmd_list() {
 }
 
 cmd_remove() {
-  wants_help "$@" && { usage_remove; return 0; }
+  local delete_branch=false
+  local positional=()
 
-  local branch="${1:-}"
+  for arg in "$@"; do
+    case "$arg" in
+      --help|-h) usage_remove; return 0 ;;
+      --delete-branch|-db) delete_branch=true ;;
+      *) positional+=("$arg") ;;
+    esac
+  done
+
+  local branch="${positional[0]:-}"
   [ -z "$branch" ] && { usage_remove; exit 1; }
 
   ensure_git_repo
@@ -187,9 +277,40 @@ cmd_remove() {
 
   [ ! -d "$target" ] && die "worktree '$branch' not found at $WORKTREE_DIR/$branch"
 
+  run_hook "pre-remove" \
+    GIT_WT_BRANCH="$branch" \
+    GIT_WT_PATH="$target" \
+    GIT_WT_ROOT="$root"
+
   info "removing worktree '$branch'…"
   git worktree remove "$target" --force
   success "worktree '$branch' removed"
+
+  run_hook "post-remove" \
+    GIT_WT_BRANCH="$branch" \
+    GIT_WT_PATH="$target" \
+    GIT_WT_ROOT="$root"
+
+  if git show-ref --verify --quiet "refs/heads/$branch" 2>/dev/null; then
+    if $delete_branch; then
+      git branch -D "$branch"
+      success "branch '$branch' deleted"
+    elif { true </dev/tty; } 2>/dev/null; then
+      printf '\033[1;33m?\033[0m  delete local branch '\''%s'\'' as well? [y/N] ' "$branch" >&2
+      read -r answer </dev/tty
+      case "$answer" in
+        [yY]|[yY][eE][sS])
+          git branch -D "$branch"
+          success "branch '$branch' deleted"
+          ;;
+        *)
+          info "branch '$branch' kept"
+          ;;
+      esac
+    else
+      info "non-interactive shell — branch '$branch' kept (use 'git branch -D $branch' to delete)"
+    fi
+  fi
 }
 
 cmd_prune() {
@@ -217,6 +338,12 @@ cmd_path() {
   printf '%s\n' "$target"
 }
 
+cmd_root() {
+  wants_help "$@" && { usage_root; return 0; }
+  ensure_git_repo
+  project_root
+}
+
 cmd_version() {
   printf 'git-wt %s\n' "$VERSION"
 }
@@ -229,22 +356,33 @@ USAGE
   git wt <command> [args]
 
 COMMANDS
-  add <branch> [base]   Create a worktree in $WORKTREE_DIR/<branch>
-                         Base defaults to default branch (main/master)
-  list                   List all worktrees
-  remove <branch>        Remove a worktree
-  prune                  Remove stale worktree references
-  path <branch>          Print the absolute path of a worktree
-  help                   Show this help message
-  version                Show version
+  add <branch> [base] [--go]  Create a worktree in $WORKTREE_DIR/<branch>
+                               Base defaults to current branch
+  list                         List all worktrees
+  remove <branch> [-db]        Remove a worktree (-db deletes branch too)
+  prune                        Remove stale worktree references
+  path <branch>                Print the absolute path of a worktree
+  root                         Print the main repository root path
+  help                         Show this help message
+  version                      Show version
+
+HOOKS
+  Create a $HOOKS_CONFIG file in the repo root to run commands
+  on worktree events. Available hooks:
+    pre-add, post-add, pre-remove, post-remove
+
+  Each hook receives: GIT_WT_BRANCH, GIT_WT_PATH, GIT_WT_ROOT
+  Add hooks also receive: GIT_WT_BASE
 
 EXAMPLES
   git wt add feature-login
   git wt add feature-login develop
+  cd "\$(git wt add feature-login --go)"
   git wt list
   git wt remove feature-login
   git wt prune
   git wt path feature-login
+  cd "\$(git wt root)"
 EOF
 }
 
@@ -260,6 +398,7 @@ main() {
     remove|rm) cmd_remove "$@" ;;
     prune)   cmd_prune "$@" ;;
     path)    cmd_path "$@" ;;
+    root)    cmd_root "$@" ;;
     version|--version|-v) cmd_version ;;
     help|--help|-h) cmd_help ;;
     *) die "unknown command '$cmd' — run 'git wt help'" ;;
