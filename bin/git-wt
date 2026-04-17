@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="1.1.0"
+VERSION="1.2.0"
 WORKTREE_DIR=".worktrees"
 HOOKS_CONFIG=".git-wtrc"
 
@@ -136,15 +136,22 @@ EOF
 
 usage_list() {
   cat <<EOF
-Usage: git wt list
+Usage: git wt list [--path]
 
 List all worktrees in the repository.
+
+By default, only the worktree name (branch) is shown. Use --path to also
+display the absolute path after the name.
+
+Options:
+  --path   Show the worktree path after the name
 
 Aliases: ls
 
 Examples:
   git wt list
   git wt ls
+  git wt list --path
 EOF
 }
 
@@ -250,8 +257,37 @@ cmd_add() {
 
 cmd_list() {
   wants_help "$@" && { usage_list; return 0; }
+
+  local show_path=false
+  for arg in "$@"; do
+    case "$arg" in
+      --path) show_path=true ;;
+      *) die "unknown option: $arg" ;;
+    esac
+  done
+
   ensure_git_repo
-  git worktree list
+
+  git worktree list --porcelain | awk -v show_path="$show_path" '
+    /^worktree / { path = substr($0, 10); branch = ""; detached = 0; next }
+    /^branch /   { branch = substr($0, 8); sub("^refs/heads/", "", branch); next }
+    /^detached/  { detached = 1; next }
+    /^$/ {
+      if (path != "") {
+        name = (branch != "") ? branch : (detached ? "(detached)" : path)
+        if (show_path == "true") printf "%s\t%s\n", name, path
+        else print name
+        path = ""; branch = ""; detached = 0
+      }
+    }
+    END {
+      if (path != "") {
+        name = (branch != "") ? branch : (detached ? "(detached)" : path)
+        if (show_path == "true") printf "%s\t%s\n", name, path
+        else print name
+      }
+    }
+  '
 }
 
 cmd_remove() {
@@ -358,7 +394,7 @@ USAGE
 COMMANDS
   add <branch> [base] [--go]  Create a worktree in $WORKTREE_DIR/<branch>
                                Base defaults to current branch
-  list                         List all worktrees
+  list [--path]                List all worktrees (--path also shows paths)
   remove <branch> [-db]        Remove a worktree (-db deletes branch too)
   prune                        Remove stale worktree references
   path <branch>                Print the absolute path of a worktree

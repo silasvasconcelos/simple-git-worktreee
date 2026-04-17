@@ -32,7 +32,7 @@ my-project/
 | Command | Description |
 |---|---|
 | `git wt add <branch> [base] [--go]` | Create a worktree from current branch. `--go` outputs path for `cd` |
-| `git wt list` | List all worktrees |
+| `git wt list [--path]` | List all worktrees (names only; `--path` also shows paths) |
 | `git wt remove <branch>` | Remove a worktree |
 | `git wt prune` | Clean up stale worktree references |
 | `git wt path <branch>` | Print the absolute path of a worktree |
@@ -135,8 +135,16 @@ git wt add feature-payment main
 
 ```bash
 git wt list
-# /Users/you/my-project              abc1234 [main]
-# /Users/you/my-project/.worktrees/feature-login  def5678 [feature-login]
+# main
+# feature-login
+```
+
+Pass `--path` to also see the absolute path of each worktree:
+
+```bash
+git wt list --path
+# main           /Users/you/my-project
+# feature-login  /Users/you/my-project/.worktrees/feature-login
 ```
 
 ### Get the path to open in another terminal
