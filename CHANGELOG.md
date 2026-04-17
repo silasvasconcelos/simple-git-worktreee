@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-04-17
+
 ### Changed
 
 - `git wt list` now shows only the worktree name (branch) by default, producing cleaner, script-friendly output. Pass `--path` to also display the absolute path after the name (`<name>\t<path>`).
@@ -47,5 +49,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI workflow with ShellCheck linting and smoke tests on Ubuntu and macOS.
 - Release workflow with automated GitHub Releases, Homebrew tap updates, and Scoop bucket updates.
 
+[1.2.0]: https://github.com/silasvasconcelos/simple-git-worktreee/releases/tag/v1.2.0
 [1.1.0]: https://github.com/silasvasconcelos/simple-git-worktreee/releases/tag/v1.1.0
 [1.0.0]: https://github.com/silasvasconcelos/simple-git-worktreee/releases/tag/v1.0.0
